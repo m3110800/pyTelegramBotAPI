@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import time
 from datetime import datetime
-from typing import Dict
 
 try:
     import ujson as json
@@ -12,6 +11,7 @@ import requests
 from requests.exceptions import HTTPError, ConnectionError, Timeout
 
 try:
+    # noinspection PyUnresolvedReferences
     from requests.packages.urllib3 import fields
     format_header_param = fields.format_header_param
 except ImportError:
@@ -28,8 +28,11 @@ session = None
 API_URL = None
 FILE_URL = None
 
-CONNECT_TIMEOUT = 3.5
-READ_TIMEOUT = 9999
+CONNECT_TIMEOUT = 15
+READ_TIMEOUT = 30
+
+LONG_POLLING_TIMEOUT = 10 # Should be positive, short polling should be used for testing purposes only (https://core.telegram.org/bots/api#getupdates)
+
 SESSION_TIME_TO_LIVE = None  # In seconds. None - live forever, 0 - one-time
 
 RETRY_ON_ERROR = False
@@ -45,6 +48,7 @@ def _get_req_session(reset=False):
     if SESSION_TIME_TO_LIVE:
         # If session TTL is set - check time passed
         creation_date = util.per_thread('req_session_time', lambda: datetime.now(), reset)
+        # noinspection PyTypeChecker
         if (datetime.now() - creation_date).total_seconds() > SESSION_TIME_TO_LIVE:
             # Force session reset
             reset = True
@@ -72,6 +76,7 @@ def _make_request(token, method_name, method='get', params=None, files=None):
     if not token:
         raise Exception('Bot token is not defined')
     if API_URL:
+        # noinspection PyUnresolvedReferences
         request_url = API_URL.format(token, method_name)
     else:
         request_url = "https://api.telegram.org/bot{0}/{1}".format(token, method_name)
@@ -83,16 +88,21 @@ def _make_request(token, method_name, method='get', params=None, files=None):
         fields.format_header_param = _no_encode(format_header_param)
     if params:
         if 'timeout' in params:
-            read_timeout = params.pop('timeout') + 10
-        if 'connect-timeout' in params:
-            connect_timeout = params.pop('connect-timeout') + 10
+            read_timeout = params.pop('timeout')
+            connect_timeout = read_timeout
+#        if 'connect-timeout' in params:
+#            connect_timeout = params.pop('connect-timeout') + 10
         if 'long_polling_timeout' in params:
-            # For getUpdates
-            # The only function with timeout on the BOT API side
-            params['timeout'] = params.pop('long_polling_timeout')
-            # Long polling hangs for given time. Read timeout should be greater that long_polling_timeout
-            read_timeout = max(params['timeout'] + 10, read_timeout)
+            # For getUpdates: it's the only function with timeout parameter on the BOT API side
+            long_polling_timeout = params.pop('long_polling_timeout')
+            params['timeout'] = long_polling_timeout
+            # Long polling hangs for a given time. Read timeout should be greater that long_polling_timeout
+            read_timeout = max(long_polling_timeout + 5, read_timeout)
+    # Lets stop suppose that user is stupid and assume that he knows what he do...
+    # read_timeout = read_timeout + 10
+    # connect_timeout = connect_timeout + 10
 
+    params = params or None # Set params to None if empty
 
     result = None
     if RETRY_ON_ERROR:
@@ -188,13 +198,15 @@ def get_file_url(token, file_id):
     if FILE_URL is None:
         return "https://api.telegram.org/file/bot{0}/{1}".format(token, get_file(token, file_id)['file_path'])
     else:
+        # noinspection PyUnresolvedReferences
         return FILE_URL.format(token, get_file(token, file_id)['file_path'])
- 
+
 
 def download_file(token, file_path):
     if FILE_URL is None:
         url =  "https://api.telegram.org/file/bot{0}/{1}".format(token, file_path)
     else:
+        # noinspection PyUnresolvedReferences
         url =  FILE_URL.format(token, file_path)
         
     result = _get_req_session().get(url, proxies=proxy)
@@ -237,7 +249,7 @@ def send_message(
     if disable_notification is not None:
         payload['disable_notification'] = disable_notification
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     if entities:
         payload['entities'] = json.dumps(types.MessageEntity.to_list_of_dicts(entities))
     if allow_sending_without_reply is not None:
@@ -263,7 +275,7 @@ def set_webhook(token, url=None, certificate=None, max_connections=None, allowed
     if drop_pending_updates is not None:  # Any bool value should pass
         payload['drop_pending_updates'] = drop_pending_updates
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     return _make_request(token, method_url, params=payload, files=files)
 
 
@@ -273,7 +285,7 @@ def delete_webhook(token, drop_pending_updates=None, timeout=None):
     if drop_pending_updates is not None:  # Any bool value should pass
         payload['drop_pending_updates'] = drop_pending_updates
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     return _make_request(token, method_url, params=payload)
 
 
@@ -281,7 +293,7 @@ def get_webhook_info(token, timeout=None):
     method_url = r'getWebhookInfo'
     payload = {}
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     return _make_request(token, method_url, params=payload)
 
 
@@ -293,9 +305,8 @@ def get_updates(token, offset=None, limit=None, timeout=None, allowed_updates=No
     if limit:
         payload['limit'] = limit
     if timeout:
-        payload['connect-timeout'] = timeout
-    if long_polling_timeout:
-        payload['long_polling_timeout'] = long_polling_timeout
+        payload['timeout'] = timeout
+    payload['long_polling_timeout'] = long_polling_timeout if long_polling_timeout else LONG_POLLING_TIMEOUT
     if allowed_updates is not None:  # Empty lists should pass
         payload['allowed_updates'] = json.dumps(allowed_updates)
     return _make_request(token, method_url, params=payload)
@@ -329,8 +340,8 @@ def get_chat_administrators(token, chat_id):
     return _make_request(token, method_url, params=payload)
 
 
-def get_chat_members_count(token, chat_id):
-    method_url = r'getChatMembersCount'
+def get_chat_member_count(token, chat_id):
+    method_url = r'getChatMemberCount'
     payload = {'chat_id': chat_id}
     return _make_request(token, method_url, params=payload)
 
@@ -373,7 +384,7 @@ def forward_message(
     if disable_notification is not None:
         payload['disable_notification'] = disable_notification
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     return _make_request(token, method_url, params=payload)
 
 
@@ -397,7 +408,7 @@ def copy_message(token, chat_id, from_chat_id, message_id, caption=None, parse_m
     if allow_sending_without_reply is not None:
         payload['allow_sending_without_reply'] = allow_sending_without_reply
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     return _make_request(token, method_url, params=payload)
 
 
@@ -416,7 +427,7 @@ def send_dice(
     if reply_markup:
         payload['reply_markup'] = _convert_markup(reply_markup)
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     if allow_sending_without_reply is not None:
         payload['allow_sending_without_reply'] = allow_sending_without_reply
     return _make_request(token, method_url, params=payload)
@@ -447,7 +458,7 @@ def send_photo(
     if disable_notification is not None:
         payload['disable_notification'] = disable_notification
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     if caption_entities:
         payload['caption_entities'] = json.dumps(types.MessageEntity.to_list_of_dicts(caption_entities))
     if allow_sending_without_reply is not None:
@@ -467,7 +478,7 @@ def send_media_group(
     if reply_to_message_id:
         payload['reply_to_message_id'] = reply_to_message_id
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     if allow_sending_without_reply is not None:
         payload['allow_sending_without_reply'] = allow_sending_without_reply
     return _make_request(
@@ -501,7 +512,7 @@ def send_location(
     if disable_notification is not None:
         payload['disable_notification'] = disable_notification
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     return _make_request(token, method_url, params=payload)
 
 
@@ -526,7 +537,7 @@ def edit_message_live_location(
     if reply_markup:
         payload['reply_markup'] = _convert_markup(reply_markup)
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     return _make_request(token, method_url, params=payload)
 
 
@@ -544,7 +555,7 @@ def stop_message_live_location(
     if reply_markup:
         payload['reply_markup'] = _convert_markup(reply_markup)
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     return _make_request(token, method_url, params=payload)
 
 
@@ -567,7 +578,7 @@ def send_venue(
     if reply_markup:
         payload['reply_markup'] = _convert_markup(reply_markup)
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     if allow_sending_without_reply is not None:
         payload['allow_sending_without_reply'] = allow_sending_without_reply
     if google_place_id:
@@ -594,7 +605,7 @@ def send_contact(
     if reply_markup:
         payload['reply_markup'] = _convert_markup(reply_markup)
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     if allow_sending_without_reply is not None:
         payload['allow_sending_without_reply'] = allow_sending_without_reply
     return _make_request(token, method_url, params=payload)
@@ -604,7 +615,7 @@ def send_chat_action(token, chat_id, action, timeout=None):
     method_url = r'sendChatAction'
     payload = {'chat_id': chat_id, 'action': action}
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     return _make_request(token, method_url, params=payload)
 
 
@@ -633,7 +644,7 @@ def send_video(token, chat_id, data, duration=None, caption=None, reply_to_messa
     if disable_notification is not None:
         payload['disable_notification'] = disable_notification
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     if thumb:
         if not util.is_string(thumb):
             if files:
@@ -677,7 +688,7 @@ def send_animation(
     if disable_notification is not None:
         payload['disable_notification'] = disable_notification
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     if thumb:
         if not util.is_string(thumb):
             if files:
@@ -716,7 +727,7 @@ def send_voice(token, chat_id, voice, caption=None, duration=None, reply_to_mess
     if disable_notification is not None:
         payload['disable_notification'] = disable_notification
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     if caption_entities:
         payload['caption_entities'] = json.dumps(types.MessageEntity.to_list_of_dicts(caption_entities))
     if allow_sending_without_reply is not None:
@@ -746,7 +757,7 @@ def send_video_note(token, chat_id, data, duration=None, length=None, reply_to_m
     if disable_notification is not None:
         payload['disable_notification'] = disable_notification
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     if thumb:
         if not util.is_string(thumb):
             if files:
@@ -787,7 +798,7 @@ def send_audio(token, chat_id, audio, caption=None, duration=None, performer=Non
     if disable_notification is not None:
         payload['disable_notification'] = disable_notification
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     if thumb:
         if not util.is_string(thumb):
             if files:
@@ -805,12 +816,15 @@ def send_audio(token, chat_id, audio, caption=None, duration=None, performer=Non
 
 def send_data(token, chat_id, data, data_type, reply_to_message_id=None, reply_markup=None, parse_mode=None,
               disable_notification=None, timeout=None, caption=None, thumb=None, caption_entities=None,
-              allow_sending_without_reply=None, disable_content_type_detection=None):
+              allow_sending_without_reply=None, disable_content_type_detection=None, visible_file_name=None):
     method_url = get_method_by_type(data_type)
     payload = {'chat_id': chat_id}
     files = None
     if not util.is_string(data):
-        files = {data_type: data}
+        file_data = data
+        if visible_file_name:
+            file_data = (visible_file_name, data)
+        files = {data_type: file_data}
     else:
         payload[data_type] = data
     if reply_to_message_id:
@@ -822,7 +836,7 @@ def send_data(token, chat_id, data, data_type, reply_to_message_id=None, reply_m
     if disable_notification is not None:
         payload['disable_notification'] = disable_notification
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     if caption:
         payload['caption'] = caption
     if thumb:
@@ -849,8 +863,8 @@ def get_method_by_type(data_type):
         return r'sendSticker'
 
 
-def kick_chat_member(token, chat_id, user_id, until_date=None, revoke_messages=None):
-    method_url = 'kickChatMember'
+def ban_chat_member(token, chat_id, user_id, until_date=None, revoke_messages=None):
+    method_url = 'banChatMember'
     payload = {'chat_id': chat_id, 'user_id': user_id}
     if isinstance(until_date, datetime):
         payload['until_date'] = until_date.timestamp()
@@ -959,11 +973,11 @@ def create_chat_invite_link(token, chat_id, expire_date, member_limit):
     }
 
     if expire_date is not None:
-        payload['expire_date'] = expire_date
-        if isinstance(payload['expire_date'], datetime):
-            payload['expire_date'] = payload['expire_date'].timestamp()
-
-    if member_limit is not None:
+        if isinstance(expire_date, datetime):
+            payload['expire_date'] = expire_date.timestamp()
+        else:
+            payload['expire_date'] = expire_date
+    if member_limit:
         payload['member_limit'] = member_limit
 
     return _make_request(token, method_url, params=payload, method='post')
@@ -977,9 +991,10 @@ def edit_chat_invite_link(token, chat_id, invite_link, expire_date, member_limit
     }
 
     if expire_date is not None:
-        payload['expire_date'] = expire_date
-        if isinstance(payload['expire_date'], datetime):
-            payload['expire_date'] = payload['expire_date'].timestamp()
+        if isinstance(expire_date, datetime):
+            payload['expire_date'] = expire_date.timestamp()
+        else:
+            payload['expire_date'] = expire_date
 
     if member_limit is not None:
         payload['member_limit'] = member_limit
@@ -1027,32 +1042,32 @@ def set_chat_title(token, chat_id, title):
     return _make_request(token, method_url, params=payload, method='post')
 
 
-def get_my_commands(token, scope, language_code):
+def get_my_commands(token, scope=None, language_code=None):
     method_url = r'getMyCommands'
     payload = {}
-    if scope is not None:
+    if scope:
         payload['scope'] = scope.to_json()
-    if language_code is not None:
+    if language_code:
         payload['language_code'] = language_code
-    return _make_request(token, method_url, params=payload, method='post')
+    return _make_request(token, method_url, params=payload)
 
 
-def set_my_commands(token, commands, scope, language_code):
+def set_my_commands(token, commands, scope=None, language_code=None):
     method_url = r'setMyCommands'
     payload = {'commands': _convert_list_json_serializable(commands)}
-    if scope is not None:
+    if scope:
         payload['scope'] = scope.to_json()
-    if language_code is not None:
+    if language_code:
         payload['language_code'] = language_code
     return _make_request(token, method_url, params=payload, method='post')
 
 
-def delete_my_commands(token, scope, language_code):
+def delete_my_commands(token, scope=None, language_code=None):
     method_url = r'deleteMyCommands'
     payload = {}
-    if scope is not None:
+    if scope: 
         payload['scope'] = scope.to_json()
-    if language_code is not None:
+    if language_code: 
         payload['language_code'] = language_code
     return _make_request(token, method_url, params=payload, method='post')
 
@@ -1090,7 +1105,7 @@ def unpin_all_chat_messages(token, chat_id):
 # Updating messages
 
 def edit_message_text(token, text, chat_id=None, message_id=None, inline_message_id=None, parse_mode=None,
-                      disable_web_page_preview=None, reply_markup=None):
+                      entities = None, disable_web_page_preview=None, reply_markup=None):
     method_url = r'editMessageText'
     payload = {'text': text}
     if chat_id:
@@ -1101,6 +1116,8 @@ def edit_message_text(token, text, chat_id=None, message_id=None, inline_message
         payload['inline_message_id'] = inline_message_id
     if parse_mode:
         payload['parse_mode'] = parse_mode
+    if entities:
+        payload['entities'] = json.dumps(types.MessageEntity.to_list_of_dicts(entities))
     if disable_web_page_preview is not None:
         payload['disable_web_page_preview'] = disable_web_page_preview
     if reply_markup:
@@ -1109,7 +1126,7 @@ def edit_message_text(token, text, chat_id=None, message_id=None, inline_message
 
 
 def edit_message_caption(token, caption, chat_id=None, message_id=None, inline_message_id=None,
-                         parse_mode=None, reply_markup=None):
+                         parse_mode=None, caption_entities=None,reply_markup=None):
     method_url = r'editMessageCaption'
     payload = {'caption': caption}
     if chat_id:
@@ -1120,6 +1137,8 @@ def edit_message_caption(token, caption, chat_id=None, message_id=None, inline_m
         payload['inline_message_id'] = inline_message_id
     if parse_mode:
         payload['parse_mode'] = parse_mode
+    if caption_entities:
+        payload['caption_entities'] = json.dumps(types.MessageEntity.to_list_of_dicts(caption_entities))
     if reply_markup:
         payload['reply_markup'] = _convert_markup(reply_markup)
     return _make_request(token, method_url, params=payload, method='post')
@@ -1158,7 +1177,7 @@ def delete_message(token, chat_id, message_id, timeout=None):
     method_url = r'deleteMessage'
     payload = {'chat_id': chat_id, 'message_id': message_id}
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     return _make_request(token, method_url, params=payload, method='post')
 
 
@@ -1177,7 +1196,7 @@ def send_game(
     if reply_markup:
         payload['reply_markup'] = _convert_markup(reply_markup)
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     if allow_sending_without_reply is not None:
         payload['allow_sending_without_reply'] = allow_sending_without_reply
     return _make_request(token, method_url, params=payload)
@@ -1240,11 +1259,11 @@ def get_game_high_scores(token, user_id, chat_id=None, message_id=None, inline_m
 
 def send_invoice(
         token, chat_id, title, description, invoice_payload, provider_token, currency, prices,
-        start_parameter, photo_url=None, photo_size=None, photo_width=None, photo_height=None,
+        start_parameter = None, photo_url=None, photo_size=None, photo_width=None, photo_height=None,
         need_name=None, need_phone_number=None, need_email=None, need_shipping_address=None,
         send_phone_number_to_provider = None, send_email_to_provider = None, is_flexible=None,
         disable_notification=None, reply_to_message_id=None, reply_markup=None, provider_data=None,
-        timeout=None, allow_sending_without_reply=None):
+        timeout=None, allow_sending_without_reply=None, max_tip_amount=None, suggested_tip_amounts=None):
     """
     Use this method to send invoices. On success, the sent Message is returned.
     :param token: Bot's token (you don't need to fill this)
@@ -1273,12 +1292,17 @@ def send_invoice(
     :param provider_data: A JSON-serialized data about the invoice, which will be shared with the payment provider. A detailed description of required fields should be provided by the payment provider.
     :param timeout:
     :param allow_sending_without_reply:
+    :param max_tip_amount: The maximum accepted amount for tips in the smallest units of the currency
+    :param suggested_tip_amounts: A JSON-serialized array of suggested amounts of tips in the smallest units of the currency.
+        At most 4 suggested tip amounts can be specified. The suggested tip amounts must be positive, passed in a strictly increased order and must not exceed max_tip_amount.
     :return:
     """
     method_url = r'sendInvoice'
     payload = {'chat_id': chat_id, 'title': title, 'description': description, 'payload': invoice_payload,
-               'provider_token': provider_token, 'start_parameter': start_parameter, 'currency': currency,
+               'provider_token': provider_token, 'currency': currency,
                'prices': _convert_list_json_serializable(prices)}
+    if start_parameter:
+        payload['start_parameter'] = start_parameter
     if photo_url:
         payload['photo_url'] = photo_url
     if photo_size:
@@ -1310,9 +1334,13 @@ def send_invoice(
     if provider_data:
         payload['provider_data'] = provider_data
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     if allow_sending_without_reply is not None:
         payload['allow_sending_without_reply'] = allow_sending_without_reply
+    if max_tip_amount is not None:
+        payload['max_tip_amount'] = max_tip_amount
+    if suggested_tip_amounts is not None:
+        payload['suggested_tip_amounts'] = json.dumps(suggested_tip_amounts)
     return _make_request(token, method_url, params=payload)
 
 
@@ -1454,12 +1482,13 @@ def delete_sticker_from_set(token, sticker):
     return _make_request(token, method_url, params=payload, method='post')
 
 
+# noinspection PyShadowingBuiltins
 def send_poll(
         token, chat_id,
         question, options,
         is_anonymous = None, type = None, allows_multiple_answers = None, correct_option_id = None,
         explanation = None, explanation_parse_mode=None, open_period = None, close_date = None, is_closed = None,
-        disable_notifications=False, reply_to_message_id=None, allow_sending_without_reply=None,
+        disable_notification=False, reply_to_message_id=None, allow_sending_without_reply=None,
         reply_markup=None, timeout=None, explanation_entities=None):
     method_url = r'sendPoll'
     payload = {
@@ -1489,8 +1518,8 @@ def send_poll(
     if is_closed is not None:
         payload['is_closed'] = is_closed
 
-    if disable_notifications:
-        payload['disable_notification'] = disable_notifications
+    if disable_notification:
+        payload['disable_notification'] = disable_notification
     if reply_to_message_id is not None:
         payload['reply_to_message_id'] = reply_to_message_id
     if allow_sending_without_reply is not None:
@@ -1498,7 +1527,7 @@ def send_poll(
     if reply_markup is not None:
         payload['reply_markup'] = _convert_markup(reply_markup)
     if timeout:
-        payload['connect-timeout'] = timeout
+        payload['timeout'] = timeout
     if explanation_entities:
         payload['explanation_entities'] = json.dumps(
             types.MessageEntity.to_list_of_dicts(explanation_entities))

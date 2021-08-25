@@ -1,11 +1,16 @@
-# <p align="center">pyTelegramBotAPI
-
-<p align="center">A simple, but extensible Python implementation for the <a href="https://core.telegram.org/bots/api">Telegram Bot API</a>.
 
 [![PyPi Package Version](https://img.shields.io/pypi/v/pyTelegramBotAPI.svg)](https://pypi.python.org/pypi/pyTelegramBotAPI)
 [![Supported Python versions](https://img.shields.io/pypi/pyversions/pyTelegramBotAPI.svg)](https://pypi.python.org/pypi/pyTelegramBotAPI)
 [![Build Status](https://travis-ci.org/eternnoir/pyTelegramBotAPI.svg?branch=master)](https://travis-ci.org/eternnoir/pyTelegramBotAPI)
 [![PyPi downloads](https://img.shields.io/pypi/dm/pyTelegramBotAPI.svg)](https://pypi.org/project/pyTelegramBotAPI/)
+
+# <p align="center">pyTelegramBotAPI
+
+<p align="center">A simple, but extensible Python implementation for the <a href="https://core.telegram.org/bots/api">Telegram Bot API</a>.
+
+## <p align="center">Supported Bot API version: <a href="https://core.telegram.org/bots/api#june-25-2021">5.3</a>!
+
+## Contents
 
   * [Getting started.](#getting-started)
   * [Writing your first bot](#writing-your-first-bot)
@@ -208,26 +213,59 @@ def send_something(message):
 **Important: all handlers are tested in the order in which they were declared**
 
 #### Edited Message handlers
-
-@bot.edited_message_handler(filters)
+Handle edited messages
+`@bot.edited_message_handler(filters) # <- passes a Message type object to your function`
 
 #### channel_post_handler
-
-@bot.channel_post_handler(filters)
+Handle channel post messages
+`@bot.channel_post_handler(filters) # <- passes a Message type object to your function`
 
 #### edited_channel_post_handler
-
-@bot.edited_channel_post_handler(filters)
+Handle edited channel post messages
+`@bot.edited_channel_post_handler(filters) # <- passes a Message type object to your function`
 
 #### Callback Query Handler
-
-In bot2.0 update. You can get `callback_query` in update object. In telebot use `callback_query_handler` to process callback queries.
-
+Handle callback queries
 ```python
 @bot.callback_query_handler(func=lambda call: True)
-def  test_callback(call):
+def  test_callback(call): # <- passes a CallbackQuery type object to your function
     logger.info(call)
 ```
+
+#### Inline Handler
+Handle inline queries
+`@bot.inline_handler() # <- passes a InlineQuery type object to your function` 
+
+#### Chosen Inline Handler
+Handle chosen inline results
+`@bot.chosen_inline_handler() # <- passes a ChosenInlineResult type object to your function`
+
+#### Shipping Query Handler
+Handle shipping queries
+`@bot.shipping_query_handeler() # <- passes a ShippingQuery type object to your function`
+
+#### Pre Checkout Query Handler
+Handle pre checkoupt queries
+`@bot.pre_checkout_query_handler() # <- passes a PreCheckoutQuery type object to your function`
+
+#### Poll Handler
+Handle poll updates
+`@bot.poll_handler() # <- passes a Poll type object to your function`
+
+#### Poll Answer Handler
+Handle poll answers
+`@bot.poll_answer_handler() # <- passes a PollAnswer type object to your function`
+
+#### My Chat Member Handler
+Handle updates of a the bot's member status in a chat
+`@bot.my_chat_member_handler() # <- passes a ChatMemberUpdated type object to your function`
+
+#### Chat Member Handler
+Handle updates of a chat member's status in a chat
+`@bot.chat_member_handler() # <- passes a ChatMemberUpdated type object to your function`
+*Note: "chat_member" updates are not requested by default. If you want to allow all update types, set `allowed_updates` in `bot.polling()` / `bot.infinity_polling()` to `util.update_types`*
+
+
 #### Middleware Handler
 
 A middleware handler is a function that allows you to modify requests or the bot context as they pass through the 
@@ -261,6 +299,7 @@ tb = telebot.TeleBot(TOKEN)	#create a new Telegram Bot object
 # - interval: True/False (default False) - The interval between polling requests
 #           Note: Editing this parameter harms the bot's response time
 # - timeout: integer (default 20) - Timeout in seconds for long polling.
+# - allowed_updates: List of Strings (default None) - List of update types to request 
 tb.polling(none_stop=False, interval=0, timeout=20)
 
 # getMe
@@ -454,6 +493,18 @@ Refer [Bot Api](https://core.telegram.org/bots/api#messageentity) for extra deta
 
 ## Advanced use of the API
 
+### Using local Bot API Sever
+Since version 5.0 of the Bot API, you have the possibility to run your own [Local Bot API Server](https://core.telegram.org/bots/api#using-a-local-bot-api-server).
+pyTelegramBotAPI also supports this feature.
+```python
+from telebot import apihelper
+
+apihelper.API_URL = "http://localhost:4200/bot{0}/{1}"
+```
+**Important: Like described [here](https://core.telegram.org/bots/api#logout), you have to log out your bot from the Telegram server before switching to your local API server. in pyTelegramBotAPI use `bot.log_out()`**
+
+*Note: 4200 is an example port*
+
 ### Asynchronous delivery of messages
 There exists an implementation of TeleBot which executes all `send_xyz` and the `get_me` functions asynchronously. This can speed up your bot __significantly__, but it has unwanted side effects if used without caution.
 To enable this behaviour, create an instance of AsyncTeleBot instead of TeleBot.
@@ -484,6 +535,19 @@ large_text = open("large_text.txt", "rb").read()
 # Split the text each 3000 characters.
 # split_string returns a list with the splitted text.
 splitted_text = util.split_string(large_text, 3000)
+
+for text in splitted_text:
+	tb.send_message(chat_id, text)
+```
+
+Or you can use the new `smart_split` function to get more meaningful substrings:
+```python
+from telebot import util
+large_text = open("large_text.txt", "rb").read()
+# Splits one string into multiple strings, with a maximum amount of `chars_per_string` (max. 4096)
+# Splits by last '\n', '. ' or ' ' in exactly this priority.
+# smart_split returns a list with the splitted text.
+splitted_text = util.smart_split(large_text, chars_per_string=3000)
 for text in splitted_text:
 	tb.send_message(chat_id, text)
 ```
@@ -532,7 +596,7 @@ You can use proxy for request. `apihelper.proxy` object will use by call `reques
 ```python
 from telebot import apihelper
 
-apihelper.proxy = {'http':'http://10.10.1.10:3128'}
+apihelper.proxy = {'http':'http://127.0.0.1:3128'}
 ```
 
 If you want to use socket5 proxy you need install dependency `pip install requests[socks]` and make sure, that you have the latest version of `gunicorn`, `PySocks`, `pyTelegramBotAPI`, `requests` and `urllib3`.
@@ -544,15 +608,20 @@ apihelper.proxy = {'https':'socks5://userproxy:password@proxy_address:port'}
 
 ## API conformance
 
-_Checking is in progress..._
-
-✅ [Bot API 4.5](https://core.telegram.org/bots/api-changelog#december-31-2019) _- To be checked..._
-
+* ➕ [Bot API 5.3](https://core.telegram.org/bots/api#june-25-2021) - ChatMemberXXX classes are full copies of ChatMember
+* ✔ [Bot API 5.2](https://core.telegram.org/bots/api#april-26-2021)
+* ✔ [Bot API 5.1](https://core.telegram.org/bots/api#march-9-2021)
+* ✔ [Bot API 5.0](https://core.telegram.org/bots/api-changelog#november-4-2020)
+* ✔ [Bot API 4.9](https://core.telegram.org/bots/api-changelog#june-4-2020)
+* ✔ [Bot API 4.8](https://core.telegram.org/bots/api-changelog#april-24-2020)
+* ✔ [Bot API 4.7](https://core.telegram.org/bots/api-changelog#march-30-2020)
+* ✔ [Bot API 4.6](https://core.telegram.org/bots/api-changelog#january-23-2020)
+* ➕ [Bot API 4.5](https://core.telegram.org/bots/api-changelog#december-31-2019) - No nested MessageEntities and Markdown2 support
 * ✔ [Bot API 4.4](https://core.telegram.org/bots/api-changelog#july-29-2019)
 * ✔ [Bot API 4.3](https://core.telegram.org/bots/api-changelog#may-31-2019)
 * ✔ [Bot API 4.2](https://core.telegram.org/bots/api-changelog#april-14-2019)
-* ➕ [Bot API 4.1](https://core.telegram.org/bots/api-changelog#august-27-2018) - No Passport support.
-* ➕ [Bot API 4.0](https://core.telegram.org/bots/api-changelog#july-26-2018)   - No Passport support.
+* ➕ [Bot API 4.1](https://core.telegram.org/bots/api-changelog#august-27-2018) - No Passport support
+* ➕ [Bot API 4.0](https://core.telegram.org/bots/api-changelog#july-26-2018)   - No Passport support
 * ✔ [Bot API 3.6](https://core.telegram.org/bots/api-changelog#february-13-2018)
 * ✔ [Bot API 3.5](https://core.telegram.org/bots/api-changelog#november-17-2017)
 * ✔ [Bot API 3.4](https://core.telegram.org/bots/api-changelog#october-11-2017)
@@ -567,22 +636,7 @@ _Checking is in progress..._
 * ✔ [Bot API 2.0](https://core.telegram.org/bots/api-changelog#april-9-2016) 
 
 
-## Change log
-
-27.04.2020 - Poll and Dice are up to date.
-Python2 conformance is not checked any more due to EOL. 
-
-11.04.2020 - Refactoring. new_chat_member is out of support. Bugfix in html_text. Started Bot API conformance checking.
-
-06.06.2019 - Added polls support (Poll). Added functions send_poll, stop_poll
-
 ## F.A.Q.
-
-### Bot 2.0
-
-April 9,2016 Telegram release new bot 2.0 API, which has a drastic revision especially for the change of method's interface.If you want to update to the latest version, please make sure you've switched bot's code to bot 2.0 method interface.
-
-[More information about pyTelegramBotAPI support bot2.0](https://github.com/eternnoir/pyTelegramBotAPI/issues/130)
 
 ### How can I distinguish a User and a GroupChat in message.chat?
 Telegram Bot API support new type Chat for message.chat.
@@ -613,7 +667,6 @@ Bot instances that were idle for a long time might be rejected by the server whe
 Get help. Discuss. Chat.
 
 * Join the [pyTelegramBotAPI Telegram Chat Group](https://telegram.me/joinchat/Bn4ixj84FIZVkwhk2jag6A)
-* We now have a Telegram Channel as well! Keep yourself up to date with API changes, and [join it](https://telegram.me/pytelegrambotapi).
 
 ## More examples
 
@@ -632,6 +685,7 @@ Get help. Discuss. Chat.
 * [League of Legends bot](https://telegram.me/League_of_Legends_bot) ([source](https://github.com/i32ropie/lol)) by *i32ropie*
 * [NeoBot](https://github.com/neoranger/NeoBot) by [@NeoRanger](https://github.com/neoranger)
 * [TagAlertBot](https://github.com/pitasi/TagAlertBot) by *pitasi*
+* [ColorCodeBot](https://t.me/colorcodebot) ([source](https://github.com/andydecleyre/colorcodebot)) - Share code snippets as beautifully syntax-highlighted HTML and/or images.
 * [ComedoresUGRbot](http://telegram.me/ComedoresUGRbot) ([source](https://github.com/alejandrocq/ComedoresUGRbot)) by [*alejandrocq*](https://github.com/alejandrocq) - Telegram bot to check the menu of Universidad de Granada dining hall.
 * [picpingbot](https://web.telegram.org/#/im?p=%40picpingbot) - Fun anonymous photo exchange by Boogie Muffin.
 * [TheZigZagProject](https://github.com/WebShark025/TheZigZagProject) - The 'All In One' bot for Telegram! by WebShark025
@@ -689,5 +743,6 @@ Get help. Discuss. Chat.
 * Digital Cryptocurrency bot by [Areeg Fahad (source)](https://github.com/AREEG94FAHAD/currencies_bot). With this bot, you can now monitor the prices of more than 12 digital Cryptocurrency. 
 * [Anti-Tracking Bot](https://t.me/AntiTrackingBot) by [Leon Heess (source)](https://github.com/leonheess/AntiTrackingBot). Send any link, and the bot tries its best to remove all tracking from the link you sent.
 * [Developer Bot](https://t.me/IndDeveloper_bot) by [Vishal Singh](https://github.com/vishal2376) [(source code)](https://github.com/vishal2376/telegram-bot) This telegram bot can do tasks like GitHub search & clone,provide c++ learning resources ,Stackoverflow search, Codeforces(profile visualizer,random problems)
-
+* [oneIPO bot](https://github.com/aaditya2200/IPO-proj) by [Aadithya](https://github.com/aaditya2200) & [Amol Soans](https://github.com/AmolDerickSoans) This Telegram bot provides live updates , data and documents on current and upcoming IPOs(Initial Public Offerings) 
+	
 **Want to have your bot listed here? Just make a pull request.**

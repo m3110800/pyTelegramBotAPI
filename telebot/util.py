@@ -4,16 +4,16 @@ import re
 import string
 import threading
 import traceback
-import warnings
-import functools
-from typing import Any, List, Dict, Union
+from typing import Any, Callable, List, Dict, Optional, Union
 
+# noinspection PyPep8Naming
 import queue as Queue
 import logging
 
 from telebot import types
 
 try:
+    # noinspection PyPackageRequirements
     from PIL import Image
     from io import BytesIO
     pil_imported = True
@@ -351,9 +351,10 @@ def quick_markup(values: Dict[str, Dict[str, Any]], row_width: int=2) -> types.I
     :return: InlineKeyboardMarkup
     """
     markup = types.InlineKeyboardMarkup(row_width=row_width)
-    buttons = []
-    for text, kwargs in values.items():
-        buttons.append(types.InlineKeyboardButton(text=text, **kwargs))
+    buttons = [
+        types.InlineKeyboardButton(text=text, **kwargs)
+        for text, kwargs in values.items()
+    ]
     markup.add(*buttons)
     return markup
 
@@ -420,17 +421,37 @@ def generate_random_token():
     return ''.join(random.sample(string.ascii_letters, 16))
 
 
-def deprecated(func):
-    """This is a decorator which can be used to mark functions
-    as deprecated. It will result in a warning being emitted
-    when the function is used."""
-    # https://stackoverflow.com/a/30253848/441814
-    @functools.wraps(func)
-    def new_func(*args, **kwargs):
-        warnings.simplefilter('always', DeprecationWarning)  # turn off filter
-        warnings.warn("Call to deprecated function {}.".format(func.__name__),
-                      category=DeprecationWarning,
-                      stacklevel=2)
-        warnings.simplefilter('default', DeprecationWarning)  # reset filter
-        return func(*args, **kwargs)
-    return new_func
+def deprecated(warn: bool=False, alternative: Optional[Callable]=None):
+    """
+    Use this decorator to mark functions as deprecated.
+    When the function is used, an info (or warning if `warn` is True) is logged.
+    :param warn: If True a warning is logged else an info
+    :param alternative: The new function to use instead
+    """
+    def decorator(function):
+        def wrapper(*args, **kwargs):
+            if not warn:
+                logger.info(f"`{function.__name__}` is deprecated." 
+                    + (f" Use `{alternative.__name__}` instead" if alternative else ""))
+            else:
+                logger.warn(f"`{function.__name__}` is deprecated." 
+                    + (f" Use `{alternative.__name__}` instead" if alternative else ""))
+            return function(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+# Cloud helpers
+def webhook_google_functions(bot, request):
+    """A webhook endpoint for Google Cloud Functions FaaS."""
+    if request.is_json:
+        try:
+            request_json = request.get_json()
+            update = types.Update.de_json(request_json)
+            bot.process_new_updates([update])
+            return ''
+        except Exception as e:
+            print(e)
+            return 'Bot FAIL', 400
+    else:
+        return 'Bot ON'

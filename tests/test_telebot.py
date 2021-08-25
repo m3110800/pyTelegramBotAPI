@@ -19,6 +19,14 @@ if not should_skip:
     CHAT_ID = os.environ['CHAT_ID']
     GROUP_ID = os.environ['GROUP_ID']
 
+def _new_test():
+    pass
+
+@util.deprecated(alternative=_new_test)
+def _test():
+    pass
+        
+
 
 @pytest.mark.skipif(should_skip, reason="No environment variables configured")
 class TestTeleBot:
@@ -126,6 +134,16 @@ class TestTeleBot:
         ret_msg = tb.send_document(CHAT_ID, ret_msg.document.file_id)
         assert ret_msg.message_id
 
+    def test_send_file_with_filename(self):
+        file_data = open('../examples/detailed_example/kitten.jpg', 'rb')
+        tb = telebot.TeleBot(TOKEN)
+
+        ret_msg = tb.send_document(CHAT_ID, file_data)
+        assert ret_msg.message_id
+
+        ret_msg = tb.send_document(CHAT_ID, file_data, visible_file_name="test.jpg")
+        assert ret_msg.message_id
+        
     def test_send_file_dis_noti(self):
         file_data = open('../examples/detailed_example/kitten.jpg', 'rb')
         tb = telebot.TeleBot(TOKEN)
@@ -605,6 +623,9 @@ class TestTeleBot:
         tb.process_new_updates([update])
         time.sleep(1)
         assert update.message.text == 'got' * 2
+    
+    def test_deprecated_dec(self):
+        _test()
 
     def test_chat_permissions(self):
         return # CHAT_ID is private chat, no permissions can be set
