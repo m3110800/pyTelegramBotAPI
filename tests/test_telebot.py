@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import sys
+import warnings
 
 sys.path.append('../')
 
@@ -19,6 +20,19 @@ if not should_skip:
     CHAT_ID = os.environ['CHAT_ID']
     GROUP_ID = os.environ['GROUP_ID']
 
+
+def deprecated1_new_function():
+    print("deprecated1_new_function")
+def deprecated1_old_function():
+    print("deprecated1_old_function")
+    warnings.warn("The 'deprecated1_old_function' is deprecated. Use `deprecated1_new_function` instead", DeprecationWarning, 2)
+    deprecated1_new_function()
+
+def deprecated2_new_function():
+    print("deprecated2_new_function")
+@util.deprecated(alternative=deprecated2_new_function)
+def deprecated2_old_function():
+    print("deprecated2_old_function")
 
 @pytest.mark.skipif(should_skip, reason="No environment variables configured")
 class TestTeleBot:
@@ -126,6 +140,16 @@ class TestTeleBot:
         ret_msg = tb.send_document(CHAT_ID, ret_msg.document.file_id)
         assert ret_msg.message_id
 
+    def test_send_file_with_filename(self):
+        file_data = open('../examples/detailed_example/kitten.jpg', 'rb')
+        tb = telebot.TeleBot(TOKEN)
+
+        ret_msg = tb.send_document(CHAT_ID, file_data)
+        assert ret_msg.message_id
+
+        ret_msg = tb.send_document(CHAT_ID, file_data, visible_file_name="test.jpg")
+        assert ret_msg.message_id
+        
     def test_send_file_dis_noti(self):
         file_data = open('../examples/detailed_example/kitten.jpg', 'rb')
         tb = telebot.TeleBot(TOKEN)
@@ -151,10 +175,10 @@ class TestTeleBot:
         assert ret_msg.message_id
 
     def test_send_video_dis_noti(self):
-        file_data = open('./test_data/test_video.mp4', 'rb')
-        tb = telebot.TeleBot(TOKEN)
-        ret_msg = tb.send_video(CHAT_ID, file_data, disable_notification=True)
-        assert ret_msg.message_id
+        with open('./test_data/test_video.mp4', 'rb') as file_data:
+            tb = telebot.TeleBot(TOKEN)
+            ret_msg = tb.send_video(CHAT_ID, file_data, disable_notification=True)
+            assert ret_msg.message_id
 
     def test_send_video_more_params(self):
         file_data = open('./test_data/test_video.mp4', 'rb')
@@ -198,7 +222,7 @@ class TestTeleBot:
     def test_send_audio(self):
         file_data = open('./test_data/record.mp3', 'rb')
         tb = telebot.TeleBot(TOKEN)
-        ret_msg = tb.send_audio(CHAT_ID, file_data, 1, performer='eternnoir', title='pyTelegram')
+        ret_msg = tb.send_audio(CHAT_ID, file_data, duration = 1, performer='eternnoir', title='pyTelegram')
         assert ret_msg.content_type == 'audio'
         assert ret_msg.audio.performer == 'eternnoir'
         assert ret_msg.audio.title == 'pyTelegram'
@@ -206,7 +230,7 @@ class TestTeleBot:
     def test_send_audio_dis_noti(self):
         file_data = open('./test_data/record.mp3', 'rb')
         tb = telebot.TeleBot(TOKEN)
-        ret_msg = tb.send_audio(CHAT_ID, file_data, 1, performer='eternnoir', title='pyTelegram',
+        ret_msg = tb.send_audio(CHAT_ID, file_data, duration = 1, performer='eternnoir', title='pyTelegram',
                                 disable_notification=True)
         assert ret_msg.content_type == 'audio'
         assert ret_msg.audio.performer == 'eternnoir'
@@ -415,8 +439,10 @@ class TestTeleBot:
 
     def test_create_revoke_detailed_chat_invite_link(self):
         tb = telebot.TeleBot(TOKEN)
-        cil = tb.create_chat_invite_link(GROUP_ID, 
-            (datetime.now() + timedelta(minutes=1)).timestamp(), member_limit=5)
+        cil = tb.create_chat_invite_link(
+            GROUP_ID,
+            expire_date = datetime.now() + timedelta(minutes=1),
+            member_limit=5)
         assert isinstance(cil.invite_link, str)
         assert cil.creator.id == tb.get_me().id
         assert isinstance(cil.expire_date, (float, int))
@@ -436,6 +462,61 @@ class TestTeleBot:
         markup.add(types.InlineKeyboardButton("Yahoo2", url="http://www.yahoo.com"))
         new_msg = tb.edit_message_reply_markup(chat_id=CHAT_ID, message_id=ret_msg.message_id, reply_markup=markup)
         assert new_msg.message_id
+
+    def test_antiflood(self):
+        text = "Testing antiflood function"
+        tb = telebot.TeleBot(TOKEN)
+        i = -1
+        for i in range(0,200):
+            util.antiflood(tb.send_message, CHAT_ID, text)
+        assert i == 199
+    
+    def test_extract_entity(self):
+        entities_map = {"https://core.telegram.org/api/entities": "https://core.telegram.org/api/entities",
+                       "https://github.com/eternnoir/pyTelegramBotAPI": "https://github.com/eternnoir/pyTelegramBotAPI",
+                       "*粗 bold  text体*": "粗 bold  text体",
+                       "_斜体 italic text_": "斜体 italic text",
+                       "[谷歌](http://www.google.com/)": "谷歌",
+                       '`std::cout<<"test"<<std::endl;`': 'std::cout<<"test"<<std::endl;',
+                       '''```rust
+let number = loop {
+    println!("Pick a pattern from 0-2:");
+    stdin.read_line(&mut option).unwrap();
+    match option.lines().next().unwrap().parse::<usize>() {
+        Ok(number @ 0..=2) => break number,
+        _ => {
+            println!("invalid input!");
+            option = String::new();
+            continue;
+        }
+    };
+};```''': '''let number = loop {
+    println!("Pick a pattern from 0-2:");
+    stdin.read_line(&mut option).unwrap();
+    match option.lines().next().unwrap().parse::<usize>() {
+        Ok(number @ 0..=2) => break number,
+        _ => {
+            println!("invalid input!");
+            option = String::new();
+            continue;
+        }
+    };
+};''',
+                       "@username": "@username",
+                       "#hashtag索引标签": "#hashtag索引标签",
+                       "do-not-reply@telegram.org": "do-not-reply@telegram.org",
+                       "+12125550123": "+12125550123"}
+        entites = list(entities_map.keys())
+        contents = list(entities_map.values())
+        contents.sort()
+        text = '\n'.join(entites)
+
+        bot = telebot.TeleBot(TOKEN)
+        message = bot.send_message(CHAT_ID, text, parse_mode="Markdown")
+        extracted_contents = [util.extract_entity(
+            message.text, e) for e in message.entities]
+        extracted_contents.sort()
+        assert contents == extracted_contents
 
     @staticmethod
     def create_text_message(text):
@@ -460,9 +541,16 @@ class TestTeleBot:
         poll_answer = None
         my_chat_member = None
         chat_member = None
+        chat_join_request = None
+        message_reaction = None
+        message_reaction_count = None
+        chat_boost = None
+        chat_boost_removed = None
+        purchased_paid_media = None
         return types.Update(-1001234038283, message, edited_message, channel_post, edited_channel_post, inline_query,
                             chosen_inline_result, callback_query, shipping_query, pre_checkout_query, poll, poll_answer,
-                            my_chat_member, chat_member)
+                            my_chat_member, chat_member, chat_join_request, message_reaction, message_reaction_count, chat_boost, chat_boost_removed,
+                            purchased_paid_media)
 
     def test_is_string_unicode(self):
         s1 = u'string'
@@ -553,14 +641,14 @@ class TestTeleBot:
         ret_msg = tb.set_my_commands([telebot.types.BotCommand(command, description)], scope, lang)
         assert ret_msg is True
 
-        ret_msg = tb.get_my_commands(scope, lang)
+        ret_msg = tb.get_my_commands(scope = scope, language_code = lang)
         assert ret_msg[0].command == command
         assert ret_msg[0].description == description
 
-        ret_msg = tb.delete_my_commands(scope, lang)
+        ret_msg = tb.delete_my_commands(scope = scope, language_code = lang)
         assert ret_msg is True
 
-        ret_msg = tb.get_my_commands(scope, lang)
+        ret_msg = tb.get_my_commands(scope = scope, language_code = lang)
         assert ret_msg == []
 
 
@@ -605,6 +693,10 @@ class TestTeleBot:
         tb.process_new_updates([update])
         time.sleep(1)
         assert update.message.text == 'got' * 2
+    
+    def test_deprecated_dec(self):
+        deprecated1_old_function()
+        deprecated2_old_function()
 
     def test_chat_permissions(self):
         return # CHAT_ID is private chat, no permissions can be set
