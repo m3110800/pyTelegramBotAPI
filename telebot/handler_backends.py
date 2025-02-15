@@ -3,11 +3,20 @@ import pickle
 import threading
 
 from telebot import apihelper
+try:
+    from redis import Redis
+    redis_installed = True
+except:
+    redis_installed = False
 
+# backward compatibility
+from telebot.states import State, StatesGroup
 
 class HandlerBackend(object):
     """
-    Class for saving (next step|reply) handlers
+    Class for saving (next step|reply) handlers.
+
+    :meta private:
     """
     def __init__(self, handlers=None):
         if handlers is None:
@@ -25,6 +34,9 @@ class HandlerBackend(object):
 
 
 class MemoryHandlerBackend(HandlerBackend):
+    """
+    :meta private:
+    """
     def register_handler(self, handler_group_id, handler):
         if handler_group_id in self.handlers:
             self.handlers[handler_group_id].append(handler)
@@ -42,6 +54,9 @@ class MemoryHandlerBackend(HandlerBackend):
 
 
 class FileHandlerBackend(HandlerBackend):
+    """
+    :meta private:
+    """
     def __init__(self, handlers=None, filename='./.handler-saves/handlers.save', delay=120):
         super(FileHandlerBackend, self).__init__(handlers)
         self.filename = filename
@@ -114,9 +129,13 @@ class FileHandlerBackend(HandlerBackend):
 
 
 class RedisHandlerBackend(HandlerBackend):
+    """
+    :meta private:
+    """
     def __init__(self, handlers=None, host='localhost', port=6379, db=0, prefix='telebot', password=None):
         super(RedisHandlerBackend, self).__init__(handlers)
-        from redis import Redis
+        if not redis_installed:
+            raise Exception("Redis is not installed. Install it via 'pip install redis'")
         self.prefix = prefix
         self.redis = Redis(host, port, db, password)
 
@@ -141,3 +160,99 @@ class RedisHandlerBackend(HandlerBackend):
             handlers = pickle.loads(value)
             self.clear_handlers(handler_group_id)
         return handlers
+
+
+class BaseMiddleware:
+    """
+    Base class for middleware.
+    Your middlewares should be inherited from this class.
+
+    Set update_sensitive=True if you want to get different updates on
+    different functions. For example, if you want to handle pre_process for
+    message update, then you will have to create pre_process_message function, and
+    so on. Same applies to post_process.
+
+    .. note::
+        If you want to use middleware, you have to set use_class_middlewares=True in your
+        TeleBot instance.
+
+    .. code-block:: python3
+        :caption: Example of class-based middlewares.
+
+        class MyMiddleware(BaseMiddleware):
+            def __init__(self):
+                self.update_sensitive = True
+                self.update_types = ['message', 'edited_message']
+            
+            def pre_process_message(self, message, data):
+                # only message update here
+                pass
+
+            def post_process_message(self, message, data, exception):
+                pass # only message update here for post_process
+
+            def pre_process_edited_message(self, message, data):
+                # only edited_message update here
+                pass
+
+            def post_process_edited_message(self, message, data, exception):
+                pass # only edited_message update here for post_process
+    """
+
+    update_sensitive: bool = False
+
+    def __init__(self):
+        pass
+
+    def pre_process(self, message, data):
+        raise NotImplementedError
+
+    def post_process(self, message, data, exception):
+        raise NotImplementedError
+
+
+class SkipHandler:
+    """
+    Class for skipping handlers.
+    Just return instance of this class 
+    in middleware to skip handler.
+    Update will go to post_process,
+    but will skip execution of handler.
+    """
+    def __init__(self) -> None:
+        pass
+
+
+class CancelUpdate:
+    """
+    Class for canceling updates.
+    Just return instance of this class 
+    in middleware to skip update.
+    Update will skip handler and execution
+    of post_process in middlewares.
+    """
+    def __init__(self) -> None:
+        pass
+
+
+class ContinueHandling:
+    """
+    Class for continue updates in handlers.
+    Just return instance of this class 
+    in handlers to continue process.
+    
+    .. code-block:: python3
+        :caption: Example of using ContinueHandling
+
+        @bot.message_handler(commands=['start'])
+        def start(message):
+            bot.send_message(message.chat.id, 'Hello World!')
+            return ContinueHandling()
+        
+        @bot.message_handler(commands=['start'])
+        def start2(message):
+            bot.send_message(message.chat.id, 'Hello World2!')
+    
+    """
+    def __init__(self) -> None:
+        pass
